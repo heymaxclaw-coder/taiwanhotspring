@@ -1,0 +1,19 @@
+{
+  "name": "台灣野溪溫泉收集手冊",
+  "short_name": "野溪溫泉",
+  "description": "溫泉探險家的收集手冊 - 記錄你踏過的每一處野溪溫泉",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a0f0a",
+  "theme_color": "#2C1810",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♨️</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["travel", "lifestyle"],
+  "lang": "zh-TW"
+}

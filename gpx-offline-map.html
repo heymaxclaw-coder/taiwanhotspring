@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>♨️ 野溪溫泉離線地圖</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Serif TC', serif; background: #1a0f0a; color: #F5E6C4; min-height: 100vh; }
+  .header { text-align: center; padding: 20px 16px 12px; border-bottom: 2px solid #8B7750; }
+  .header h1 { font-size: 1.8rem; color: #F5E6C4; margin-bottom: 4px; }
+  .header p { font-size: 0.85rem; color: #D4C4A8; }
+  .container { max-width: 800px; margin: 0 auto; padding: 12px; }
+  .info-box { background: #3d2518; border: 1px solid #8B7750; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 0.85rem; color: #D4C4A8; }
+  .info-box b { color: #F5E6C4; }
+  .spring-select { width: 100%; padding: 10px 14px; border-radius: 8px; border: 2px solid #8B7750; background: #F5E6C4; color: #4A3728; font-size: 1rem; margin-bottom: 12px; appearance: none; }
+  .btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .btn { flex: 1; padding: 10px; border-radius: 8px; border: none; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #c9302c; color: white; }
+  .btn-secondary { background: #3d2518; color: #D4C4A8; border: 1px solid #8B7750; }
+  .btn-download { background: #4A7C59; color: white; }
+  #map { height: 55vh; min-height: 320px; border-radius: 8px; border: 3px solid #8B7750; margin-bottom: 12px; }
+  .status { background: #3d2518; border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; color: #D4C4A8; margin-bottom: 12px; text-align: center; }
+  .progress-bar { height: 6px; background: #1a0f0a; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #c9302c; transition: width 0.3s; }
+  .tile-info { font-size: 0.75rem; color: #8B7750; text-align: center; margin-top: 6px; }
+  .legend { display: flex; gap: 16px; justify-content: center; margin-top: 8px; font-size: 0.8rem; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-line { width: 24px; height: 3px; border-radius: 2px; }
+  .empty { text-align: center; padding: 40px 20px; color: #8B7750; }
+  .empty p { margin-bottom: 8px; }
+  .help-text { font-size: 0.75rem; color: #8B7750; text-align: center; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🗺️ 離線地圖</h1>
+  <p>選擇溫泉 → 顯示 GPX 軌跡 → 下載方圓 50km 地圖磚</p>
+</div>
+
+<div class="container">
+  <div class="info-box">
+    <b>📍 使用方式：</b>先在「♨️ 溫泉收集」分頁的卡片上上傳 GPX 檔案，
+    之後就能在這裡選擇該溫泉並顯示軌跡。下載後可離線使用。
+  </div>
+
+  <select id="springSelect" class="spring-select">
+    <option value="">— 選擇已上傳 GPX 的溫泉 —</option>
+  </select>
+
+  <div class="btn-row">
+    <button class="btn btn-secondary" id="refreshBtn">🔄 刷新</button>
+    <button class="btn btn-download" id="downloadBtn" disabled>📥 下載離線地圖（50km）</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="legend" id="legend" style="display:none">
+    <div class="legend-item">
+      <div class="legend-line" style="background:#c9302c"></div>
+      <span>GPX 軌跡</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-line" style="background:#4A7C59"></div>
+      <span>溫泉位置</span>
+    </div>
+  </div>
+
+  <div class="status" id="status">等待選擇溫泉...</div>
+  <div id="progressWrap" style="display:none">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+  <div class="tile-info" id="tileInfo"></div>
+</div>
+
+<script>
+// IndexedDB 常量
+const DB_NAME = 'taiwanhotspring_gpx';
+const STORE_NAME = 'gpx_files';
+const DB_VERSION = 1;
+
+let db;
+let map, marker, polyline;
+let currentSpringId = null;
+const RADIUS_KM = 50;
+
+// 打開 IndexedDB
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const database = e.target.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.createObjectStore(STORE_NAME, { keyPath: 'springId' });
+      }
+    };
+  });
+}
+
+// 讀取所有已儲存的 GPX
+async function listStoredGPX() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).getAll();
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result || []);
+  });
+}
+
+// 讀取指定 GPX
+async function getGPX(springId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(springId);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result?.gpxContent ?? null);
+  });
+}
+
+// 填充下拉選單
+async function populateSelect() {
+  const list = await listStoredGPX();
+  const sel = document.getElementById('springSelect');
+  sel.innerHTML = '<option value="">— 選擇已上傳 GPX 的溫泉 —</option>';
+  if (list.length === 0) {
+    setStatus('尚無 GPX 檔案。請先在溫泉卡片上上傳。');
+    return;
+  }
+  list.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.springId;
+    const date = new Date(item.uploadedAt).toLocaleDateString('zh-TW');
+    opt.textContent = `${item.springId}（${date} 上傳）`;
+    sel.appendChild(opt);
+  });
+  setStatus(`已載入 ${list.length} 個 GPX 檔案`);
+}
+
+// 解析座標
+function parseCoord(str) {
+  if (!str) return null;
+  const parts = str.split(/[,，\s]+/).map(s => parseFloat(s.trim()));
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return [parts[0], parts[1]];
+  return null;
+}
+
+// Tile 計算
+function lngToTileX(lng, z) { return Math.floor(((lng + 180) / 360) * Math.pow(2, z)); }
+function latToTileY(lat, z) {
+  const r = (lat * Math.PI) / 180;
+  return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * Math.pow(2, z));
+}
+function tileBounds(lat, lon, km) {
+  return {
+    minLat: lat - km / 111,
+    maxLat: lat + km / 111,
+    minLon: lon - km / (111 * Math.cos(lat * Math.PI / 180)),
+    maxLon: lon + km / (111 * Math.PI / 180) * Math.cos(lat * Math.PI / 180),
+  };
+}
+
+// 初始化地圖
+function initMap() {
+  map = L.map('map').setView([23.9, 121.1], 8);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 17,
+  }).addTo(map);
+}
+
+// 顯示 GPX
+async function showGPX(springId) {
+  currentSpringId = springId;
+  setStatus('載入 GPX...');
+  document.getElementById('legend').style.display = 'none';
+
+  const gpxText = await getGPX(springId);
+  if (!gpxText) { setStatus('找不到 GPX 資料'); return; }
+
+  // 移除舊圖層
+  if (polyline) { map.removeLayer(polyline); polyline = null; }
+  if (marker) { map.removeLayer(marker); marker = null; }
+
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(gpxText, 'text/xml');
+  const trkpts = xml.querySelectorAll('trkpt');
+  const points = [];
+  trkpts.forEach(pt => {
+    const lat = parseFloat(pt.getAttribute('lat'));
+    const lon = parseFloat(pt.getAttribute('lon'));
+    if (lat && lon) points.push([lat, lon]);
+  });
+
+  if (points.length === 0) { setStatus('GPX 無可用軌跡點'); return; }
+
+  // 畫軌跡
+  polyline = L.polyline(points, { color: '#c9302c', weight: 4, opacity: 0.8 }).addTo(map);
+
+  // 飛到範圍
+  map.fitBounds(polyline.getBounds(), { padding: [30, 30], maxZoom: 14 });
+
+  // 終點 marker
+  const last = points[points.length - 1];
+  marker = L.circleMarker(last, {
+    radius: 8, fillColor: '#4A7C59', color: '#fff', weight: 2, fillOpacity: 1
+  }).addTo(map).bindPopup(`<b>${springId}</b>`).openPopup();
+
+  document.getElementById('legend').style.display = 'flex';
+  setStatus(`📍 已載入 GPX（${points.length} 個軌跡點）`);
+}
+
+// 下載 tiles
+async function downloadTiles() {
+  if (!currentSpringId) return;
+  const coordStr = prompt('請輸入溫泉座標（格式：23.8838, 121.3552）：');
+  if (!coordStr) return;
+  const coord = parseCoord(coordStr);
+  if (!coord) { setStatus('座標格式錯誤'); return; }
+
+  const bounds = tileBounds(coord[0], coord[1], RADIUS_KM);
+  const tiles = [];
+  for (let z = 8; z <= 15; z++) {
+    for (let lat = bounds.minLat; lat <= bounds.maxLat; lat += 0.001) {
+      for (let lon = bounds.minLon; lon <= bounds.maxLon; lon += 0.001) {
+        const x = lngToTileX(lon, z);
+        const y = latToTileY(lat, z);
+        const url = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+        if (!tiles.includes(url)) tiles.push(url);
+      }
+    }
+  }
+
+  const downloadedKey = `tiles_${currentSpringId}`;
+  const downloaded = JSON.parse(localStorage.getItem(downloadedKey) || '[]');
+  const toDownload = tiles.filter(u => !downloaded.includes(u));
+
+  if (toDownload.length === 0) {
+    setStatus(`✅ 所有地圖磚已離線（${downloaded.length} tiles）`);
+    return;
+  }
+
+  document.getElementById('progressWrap').style.display = 'block';
+  const total = toDownload.length;
+  let done = 0;
+  setStatus(`📥 下載中... 0/${total}`);
+
+  const batchSize = 8;
+  for (let i = 0; i < toDownload.length; i += batchSize) {
+    const batch = toDownload.slice(i, i + batchSize);
+    await Promise.allSettled(batch.map(async url => {
+      try {
+        const r = await fetch(url, { mode: 'cors' });
+        if (r.ok) downloaded.push(url);
+      } catch (_) {}
+    }));
+    done += batch.length;
+    const pct = Math.round((done / total) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    setStatus(`📥 下載中... ${done}/${total} (${pct}%)`);
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  localStorage.setItem(downloadedKey, JSON.stringify(downloaded));
+  document.getElementById('progressWrap').style.display = 'none';
+  setStatus(`✅ 完成！已快取 ${downloaded.length} 張地圖磚（方圓 ${RADIUS_KM}km）`);
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+// 初始化
+window.addEventListener('DOMContentLoaded', async () => {
+  initMap();
+  await populateSelect();
+
+  document.getElementById('springSelect').addEventListener('change', async (e) => {
+    if (e.target.value) await showGPX(e.target.value);
+  });
+
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    await populateSelect();
+  });
+
+  document.getElementById('downloadBtn').addEventListener('click', downloadTiles);
+});
+</script>
+</body>
+</html>

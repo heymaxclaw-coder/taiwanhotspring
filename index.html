@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌊 溯溪裝備檢查表 — 三天兩夜</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f4f1eb;
+      color: #2c3e50;
+      padding: 16px 12px 80px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      padding: 20px 0 16px;
+    }
+    .header h1 {
+      font-size: 22px;
+      color: #2c3e50;
+    }
+    .header p {
+      font-size: 13px;
+      color: #7f8c8d;
+      margin-top: 4px;
+    }
+    .progress-bar-wrap {
+      background: #e0dbd3;
+      border-radius: 20px;
+      height: 10px;
+      margin: 14px 0 20px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #38A169, #2ecc71);
+      border-radius: 20px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-text {
+      text-align: center;
+      font-size: 13px;
+      color: #7f8c8d;
+      margin-bottom: 16px;
+    }
+    .category {
+      margin-bottom: 14px;
+    }
+    .category-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #2c3e50;
+      color: white;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      user-select: none;
+    }
+    .category-header .icon { font-size: 18px; margin-right: 8px; }
+    .category-header .badge {
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: normal;
+    }
+    .category-header .arrow {
+      transition: transform 0.2s;
+      font-size: 12px;
+    }
+    .category-header.open .arrow { transform: rotate(180deg); }
+    .items {
+      display: none;
+      background: white;
+      border-radius: 0 0 10px 10px;
+      overflow: hidden;
+    }
+    .items.open { display: block; }
+    .item {
+      display: flex;
+      align-items: center;
+      padding: 11px 14px;
+      border-bottom: 1px solid #f0ece6;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .item:last-child { border-bottom: none; }
+    .item:hover { background: #faf9f7; }
+    .item.checked {
+      background: #f0f9f0;
+      text-decoration: line-through;
+      color: #95a5a6;
+    }
+    .item.checked .item-name { text-decoration: line-through; }
+    .checkbox {
+      width: 22px;
+      height: 22px;
+      border: 2px solid #ccc;
+      border-radius: 6px;
+      margin-right: 12px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: white;
+      transition: all 0.15s;
+    }
+    .item.checked .checkbox {
+      background: #38A169;
+      border-color: #38A169;
+    }
+    .item-name { font-size: 14px; flex: 1; }
+    .item-note {
+      font-size: 11px;
+      color: #95a5a6;
+      margin-left: 6px;
+    }
+    .footer-sticky {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 480px;
+      background: white;
+      border-top: 1px solid #e0dbd3;
+      padding: 12px 16px;
+      display: flex;
+      gap: 10px;
+      z-index: 100;
+    }
+    .btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      text-align: center;
+    }
+    .btn-reset {
+      background: #fdecea;
+      color: #e74c3c;
+    }
+    .btn-share {
+      background: #2c3e50;
+      color: white;
+    }
+    @media (max-width: 480px) {
+      body { padding: 12px 10px 90px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🌊 溯溪裝備檢查表</h1>
+  <p>三天兩夜野營 · 輕量化版</p>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+  <div class="progress-text" id="progressText">0 / 0 完成</div>
+</div>
+
+<div id="checklist"></div>
+
+<div class="footer-sticky">
+  <button class="btn btn-reset" onclick="resetAll()">🔄 重置</button>
+  <button class="btn btn-share" onclick="shareProgress()">📤 分享進度</button>
+</div>
+
+<script>
+const categories = [
+  {
+    name: "👕 服飾與衣物",
+    icon: "👕",
+    items: [
+      "速乾排汗衣（2-3件）",
+      "防曬長袖外套",
+      "防風防水外套（GTX優先）",
+      "溯溪專用防滑鞋",
+      "涼鞋或拖鞋（營地穿）",
+      "泳褲/水陸兩用褲",
+      "換洗內衣褲（3件）",
+      "毛巾（快乾型）",
+      "遮陽帽或頭巾"
+    ]
+  },
+  {
+    name: "🏕️ 露營裝備",
+    icon: "🏕️",
+    items: [
+      "登山帳篷（含地布）",
+      "睡袋（舒適溫標 10°C）",
+      "蛋巢墊 or 充氣睡墊",
+      "睡墊修補包",
+      "營燈 or 頭燈（備用電池）",
+      "折疊椅 or 充氣椅",
+      "野餐墊"
+    ]
+  },
+  {
+    name: "🍳 炊事與食物",
+    icon: "🍳",
+    items: [
+      "爐頭 + 氣罐 × 2",
+      "煮鍋 + 鈦杯",
+      "摺疊餐具（筷/叉/勺）",
+      "保冰保溫袋（食物保鮮）",
+      "行動糧（能量棒/堅果/軟糖）",
+      "早晚餐食材（3餐）",
+      "午餐方便食材（飯糰/泡麵）",
+      "飲用水（每人每天2L計算）",
+      "攜帶式濾水器（備用）"
+    ]
+  },
+  {
+    name: "🌊 溯溪專業裝備",
+    icon: "🌊",
+    items: [
+      "防滑溪鞋（確保抓地力）",
+      "防寒手套（溪水冰冷）",
+      "輕量潛水手套（岩岸保護）",
+      "防水背包 30L以上（貴重物品）",
+      "乾燥袋（分層打包）",
+      "D型扣環 × 4",
+      "靜力繩 30m（團隊共攜）",
+      "拋繩袋",
+      "防水手機袋",
+      "防水相機袋",
+      "頭盔（峽谷必備）"
+    ]
+  },
+  {
+    name: "🩹 安全與急救",
+    icon: "🩹",
+    items: [
+      "個人急救包",
+      "防蚊液",
+      "防曬乳 SPF50+",
+      "防水OK蹦",
+      "彈性繃帶",
+      "鹽巴（小傷口清洗）",
+      "簡報紙巾（緊急保暖）",
+      "行動電源（太陽能佳）"
+    ]
+  },
+  {
+    name: "🧴 個人清潔",
+    icon: "🧴",
+    items: [
+      "刷牙組（迷你牙膏）",
+      "防晒唇膏",
+      "濕紙巾（無需沖水）",
+      "簡便洗髮沐浴露",
+      "垃圾袋（帶出所有垃圾）"
+    ]
+  },
+  {
+    name: "📝 證件與財務",
+    icon: "📝",
+    items: [
+      "身份證 + 健保卡",
+      "緊急聯絡卡",
+      "現金（山區無電子支付）",
+      "手機 + 行動電源"
+    ]
+  }
+];
+
+const STORAGE_KEY = "creek-gear-v1";
+
+function render() {
+  const container = document.getElementById("checklist");
+  container.innerHTML = "";
+  
+  let total = 0;
+  let done = 0;
+
+  categories.forEach((cat, ci) => {
+    const checked = getChecked();
+    const catChecked = cat.items.filter(it => checked.includes(`${ci}-${it}`)).length;
+    total += cat.items.length;
+    done += catChecked;
+
+    const html = `
+      <div class="category">
+        <div class="category-header ${isOpen(ci) ? 'open' : ''}" onclick="toggle(${ci})">
+          <span><span class="icon">${cat.icon}</span>${cat.name}</span>
+          <span style="display:flex;align-items:center;gap:6px">
+            <span class="badge">${catChecked}/${cat.items.length}</span>
+            <span class="arrow">▼</span>
+          </span>
+        </div>
+        <div class="items ${isOpen(ci) ? 'open' : ''}">
+          ${cat.items.map((item, ii) => {
+            const key = `${ci}-${item}`;
+            const isChecked = checked.includes(key);
+            return `
+            <div class="item ${isChecked ? 'checked' : ''}" onclick="toggleItem('${key.replace(/'/g,"\\'")}')">
+              <div class="checkbox">${isChecked ? '✓' : ''}</div>
+              <span class="item-name">${item}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    container.innerHTML += html;
+  });
+
+  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  document.getElementById("progressBar").style.width = pct + "%";
+  document.getElementById("progressText").textContent = `${done} / ${total} 完成（${pct}%）`;
+  
+  saveOpen();
+}
+
+function toggleItem(key) {
+  const checked = getChecked();
+  const idx = checked.indexOf(key);
+  if (idx >= 0) checked.splice(idx, 1);
+  else checked.push(key);
+  localStorage.setItem(STORAGE_KEY + "_checked", JSON.stringify(checked));
+  render();
+}
+
+function toggle(ci) {
+  const open = getOpen();
+  const idx = open.indexOf(ci);
+  if (idx >= 0) open.splice(idx, 1);
+  else open.push(ci);
+  localStorage.setItem(STORAGE_KEY + "_open", JSON.stringify(open));
+  render();
+}
+
+function getChecked() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY + "_checked") || "[]"); }
+  catch { return []; }
+}
+
+function getOpen() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY + "_open") || "[0]"); }
+  catch { return [0]; }
+}
+
+function isOpen(ci) {
+  return getOpen().includes(ci);
+}
+
+function saveOpen() {
+  // already saved in toggle()
+}
+
+function resetAll() {
+  if (confirm("確定要重置所有選項嗎？")) {
+    localStorage.removeItem(STORAGE_KEY + "_checked");
+    render();
+  }
+}
+
+function shareProgress() {
+  const checked = getChecked();
+  let total = 0, done = 0;
+  categories.forEach((cat, ci) => {
+    total += cat.items.length;
+    done += cat.items.filter(it => checked.includes(`${ci}-${it}`)).length;
+  });
+  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  const text = `🌊 溯溪裝備檢查：三 ${done}/${total} 完成（${pct}%）`;
+  if (navigator.share) {
+    navigator.share({ title: "溯溪裝備檢查", text });
+  } else {
+    navigator.clipboard.writeText(text).then(() => alert("已複製到剪貼簿！"));
+  }
+}
+
+// Auto-open first category by default
+if (!localStorage.getItem(STORAGE_KEY + "_open")) {
+  localStorage.setItem(STORAGE_KEY + "_open", JSON.stringify([0]));
+}
+
+render();
+</script>
+</body>
+</html>
